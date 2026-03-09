@@ -3,31 +3,37 @@ version: '3.8'
 services:
   manager:
     build:
-      context: ./manager
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: manager/Dockerfile
     container_name: crackhash-manager
     ports:
       - "8080:8080"
     networks:
       - crackhash-network
+    volumes:
+      - gradle-cache:/root/.gradle
     environment:
       - SPRING_PROFILES_ACTIVE=prod
+      - WORKERS_URLS=http://worker-1:8081,http://worker-2:8081,http://worker-3:8081
+      - WORKERS_TIMEOUT=60
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
-  worker:
+  worker-1:
     build:
-      context: ./worker
-      dockerfile: Dockerfile
-    container_name: crackhash-worker
+      context: .
+      dockerfile: worker/Dockerfile
+    container_name: crackhash-worker-1
     ports:
       - "8081:8081"
     networks:
       - crackhash-network
+    volumes:
+      - gradle-cache:/root/.gradle
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       - MANAGER_URL=http://manager:8080
@@ -39,8 +45,64 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
+
+  worker-2:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    container_name: crackhash-worker-2
+    ports:
+      - "8082:8081"
+    networks:
+      - crackhash-network
+    volumes:
+      - gradle-cache:/root/.gradle
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - MANAGER_URL=http://manager:8080
+    depends_on:
+      manager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  worker-3:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    container_name: crackhash-worker-3
+    ports:
+      - "8083:8081"
+    networks:
+      - crackhash-network
+    volumes:
+      - gradle-cache:/root/.gradle
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - MANAGER_URL=http://manager:8080
+    depends_on:
+      manager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 networks:
   crackhash-network:
     driver: bridge
+
+volumes:
+  gradle-cache:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${USERPROFILE}/.gradle

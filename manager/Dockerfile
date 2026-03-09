@@ -1,9 +1,9 @@
-FROM eclipse-temurin:17-jdk-jammy
+FROM gradle:8.9-jdk17
 
 WORKDIR /app
 
-COPY build/libs/*.jar app.jar
+COPY . .
 
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["gradle", ":manager:bootRun", "--no-daemon"]
