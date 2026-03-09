@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: manager
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.crackhash: INFO
+
+worker:
+  url: http://localhost:8081
+  timeout: 60

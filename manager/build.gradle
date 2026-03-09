@@ -1,0 +1,14 @@
+plugins {
+    id 'com.github.bjornvester.xjc' version '1.8.2'
+}
+
+xjc {
+    xsdDir.set(layout.projectDirectory.dir("src/main/resources/xsd"))
+    defaultPackage.set("com.crackhash.manager.dto")
+}
+
+dependencies {
+    implementation 'com.fasterxml.jackson.module:jackson-module-jaxb-annotations'
+    xjc 'org.glassfish.jaxb:jaxb-xjc:4.0.5'
+    xjc 'org.glassfish.jaxb:jaxb-runtime:4.0.5'
+}

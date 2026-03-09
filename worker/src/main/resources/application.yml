@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: worker
+
+server:
+  port: 8081
+
+logging:
+  level:
+    com.crackhash: INFO
+
+manager:
+  url: http://manager:8080
