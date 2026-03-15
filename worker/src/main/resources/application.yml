@@ -10,4 +10,4 @@ logging:
     com.crackhash: INFO
 
 manager:
-  url: http://manager:8080
+  url: http://localhost:8080

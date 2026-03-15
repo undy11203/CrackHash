@@ -15,16 +15,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
@@ -40,7 +39,6 @@ public class HashCrackService {
     @Value("${workers.timeout}")
     private long timeoutSeconds;
 
-    private final Map<UUID, StatusResponse> tasks = new ConcurrentHashMap<>();
     private final Map<UUID, TaskState> taskStates = new ConcurrentHashMap<>();
     private final Map<UUID, ScheduledFuture<?>> timeouts = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -49,10 +47,9 @@ public class HashCrackService {
         UUID requestId = UUID.randomUUID();
         int partCount = workerUrls.size();
 
-        tasks.put(requestId, new StatusResponse(Status.IN_PROGRESS, null));
-        taskStates.put(requestId, new TaskState(partCount));
+        TaskState state = new TaskState(partCount);
+        taskStates.put(requestId, state);
 
-        // Send each worker its own part
         for (int partNumber = 0; partNumber < partCount; partNumber++) {
             String workerUrl = workerUrls.get(partNumber);
             CrackHashManagerRequest workerRequest = buildWorkerRequest(requestId, request, partNumber, partCount);
@@ -66,17 +63,17 @@ public class HashCrackService {
                 );
             } catch (Exception e) {
                 log.error("Failed to send task {} to worker {}: {}", requestId, workerUrl, e.getMessage());
-                taskStates.remove(requestId);
-                cancelTimeout(requestId);
-                tasks.put(requestId, new StatusResponse(Status.ERROR, null));
+                state.status = Status.ERROR;
                 return requestId;
             }
         }
 
-        // Schedule timeout: if not all callbacks arrive in time → ERROR
         ScheduledFuture<?> timeout = scheduler.schedule(() -> {
-            tasks.put(requestId, new StatusResponse(Status.ERROR, null));
-            taskStates.remove(requestId);
+            TaskState s = taskStates.get(requestId);
+            synchronized (s) {
+                if (s.status != Status.IN_PROGRESS) return;
+                s.status = Status.ERROR;
+            }
             timeouts.remove(requestId);
             log.warn("Task {} timed out after {}s", requestId, timeoutSeconds);
         }, timeoutSeconds, TimeUnit.SECONDS);
@@ -87,26 +84,40 @@ public class HashCrackService {
 
     public void handleWorkerCallback(CrackHashWorkerResponse response) {
         UUID requestId = UUID.fromString(response.getRequestId());
+        int partNumber = response.getPartNumber();
+
         TaskState state = taskStates.get(requestId);
         if (state == null) {
-            log.warn("Received callback for unknown or timed-out task {}", requestId);
+            log.warn("Received callback for unknown task {}", requestId);
             return;
         }
 
-        state.addWords(response.getAnswers().getWords());
-        int remaining = state.countDown();
-        log.info("Task {}: received part {}, remaining={}", requestId, response.getPartNumber(), remaining);
+        synchronized (state) {
+            if (state.status != Status.IN_PROGRESS) {
+                log.warn("Task {}: ignoring part {} — task already {}", requestId, partNumber, state.status);
+                return;
+            }
+            state.words.addAll(response.getAnswers().getWords());
+            int remaining = state.partCount - ++state.receivedParts;
+            log.info("Task {}: received part {}, remaining={}", requestId, partNumber, remaining);
 
-        if (remaining == 0) {
-            tasks.put(requestId, new StatusResponse(Status.READY, state.getWords()));
-            taskStates.remove(requestId);
-            cancelTimeout(requestId);
-            log.info("Task {} fully completed, found: {}", requestId, state.getWords());
+            if (remaining == 0) {
+                state.status = Status.READY;
+                cancelTimeout(requestId);
+                log.info("Task {} fully completed, found: {}", requestId, state.words);
+            }
         }
     }
 
     public StatusResponse getStatus(UUID requestId) {
-        return tasks.getOrDefault(requestId, new StatusResponse(Status.IN_PROGRESS, null));
+        TaskState state = taskStates.get(requestId);
+        if (state == null) { //хз что возвращать
+            return new StatusResponse(Status.IN_PROGRESS, null);
+        }
+        synchronized (state) {
+            return new StatusResponse(state.status,
+                    state.status == Status.READY ? new ArrayList<>(state.words) : null);
+        }
     }
 
     private void cancelTimeout(UUID requestId) {
@@ -135,24 +146,13 @@ public class HashCrackService {
     }
 
     private static class TaskState {
-        private final AtomicInteger remaining;
-        private final List<String> words = Collections.synchronizedList(new ArrayList<>());
+        Status status = Status.IN_PROGRESS;
+        int partCount;
+        int receivedParts = 0;
+        List<String> words = new ArrayList<>();
 
         TaskState(int partCount) {
-            this.remaining = new AtomicInteger(partCount);
-        }
-
-        void addWords(List<String> newWords) {
-            words.addAll(newWords);
-        }
-
-        /** Returns remaining part count after decrement */
-        int countDown() {
-            return remaining.decrementAndGet();
-        }
-
-        List<String> getWords() {
-            return words;
+            this.partCount = partCount;
         }
     }
 }

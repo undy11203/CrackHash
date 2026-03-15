@@ -66,33 +66,27 @@ public class HashCrackService {
         log.info("Processing task {}: hash={}, maxLength={}, part={}/{}",
                 request.getRequestId(), targetHash, maxLength, partNumber, partCount);
 
-        // Total number of strings across all lengths 1..maxLength
         long totalCount = 0;
         for (int len = 1; len <= maxLength; len++) {
             totalCount += pow(alphabetSize, len);
         }
 
-        // This worker's slice of the global index space
         long globalStart = totalCount * partNumber / partCount;
         long globalEnd = totalCount * (partNumber + 1) / partCount;
 
         List<String> results = new ArrayList<>();
-        long offset = 0; // running offset into the global index space
-
+        long offset = 0; 
         for (int len = 1; len <= maxLength; len++) {
             long countForLen = pow(alphabetSize, len);
 
-            // Skip this length block if it doesn't overlap with our range
             if (globalEnd <= offset || globalStart >= offset + countForLen) {
                 offset += countForLen;
                 continue;
             }
 
-            // Local indices within this length block that belong to our range
             long localStart = Math.max(globalStart, offset) - offset;
             long localEnd = Math.min(globalEnd, offset + countForLen) - offset;
 
-            // Iterate lazily — only one combination is held in memory at a time
             long idx = 0;
             for (List<String> perm : Generator.permutation(symbols).withRepetitions(len)) {
                 if (idx >= localEnd) break;

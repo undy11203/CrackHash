@@ -10,6 +10,5 @@ logging:
     com.crackhash: INFO
 
 workers:
-  urls:
-    - http://localhost:8081
+  urls: http://localhost:8081,http://localhost:8082,http://localhost:8083
   timeout: 60
