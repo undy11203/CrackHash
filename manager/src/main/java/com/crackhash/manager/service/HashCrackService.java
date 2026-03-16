@@ -73,8 +73,8 @@ public class HashCrackService {
             synchronized (s) {
                 if (s.status != Status.IN_PROGRESS) return;
                 s.status = Status.ERROR;
+                timeouts.remove(requestId);
             }
-            timeouts.remove(requestId);
             log.warn("Task {} timed out after {}s", requestId, timeoutSeconds);
         }, timeoutSeconds, TimeUnit.SECONDS);
         timeouts.put(requestId, timeout);
